@@ -1,0 +1,3 @@
+../Core/Src/trimpot.c:7:16:initTrimpot	24	static
+../Core/Src/trimpot.c:28:7:readADC	32	static
+../Core/Src/trimpot.c:52:6:printValues	88	static

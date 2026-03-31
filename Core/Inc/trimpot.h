@@ -1,0 +1,35 @@
+#include "cmsis_os.h"
+#include "main.h"
+#include <stdbool.h>
+#ifndef TRIMPOT_H
+#define TRIMPOT_H
+
+
+
+typedef struct {
+
+	uint8_t potNumber;
+	float Readings[10];
+	float highestReading;
+	float lowestReading;
+	uint16_t highCount;
+	uint16_t lowCount;
+	uint32_t highPressTime;
+	uint32_t lowPressTime;
+
+
+} trimpotSensor;
+
+
+
+trimpotSensor *initTrimpot(uint8_t);
+
+
+void startADC(ADC_HandleTypeDef*);
+
+float readADC(trimpotSensor*,ADC_HandleTypeDef*);
+
+bool printValues(trimpotSensor*,UART_HandleTypeDef);
+
+
+#endif
