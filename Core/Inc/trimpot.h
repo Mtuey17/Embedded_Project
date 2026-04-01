@@ -14,8 +14,10 @@ typedef struct {
 	float lowestReading;
 	uint16_t highCount;
 	uint16_t lowCount;
-	uint32_t highPressTime;
-	uint32_t lowPressTime;
+	uint32_t lastHighTime;
+	uint32_t lastLowTime;
+	uint32_t highestTime;
+	uint32_t lowestTime;
 
 
 } trimpotSensor;
@@ -25,7 +27,9 @@ typedef struct {
 trimpotSensor *initTrimpot(uint8_t);
 
 
-void startADC(ADC_HandleTypeDef*);
+
+
+
 
 float readADC(trimpotSensor*,ADC_HandleTypeDef*);
 

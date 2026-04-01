@@ -28,6 +28,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 typedef StaticTask_t osStaticThreadDef_t;
+typedef StaticSemaphore_t osStaticMutexDef_t;
 /* USER CODE BEGIN PTD */
 
 /* USER CODE END PTD */
@@ -56,7 +57,7 @@ UART_HandleTypeDef huart2;
 
 /* Definitions for PotOneTask */
 osThreadId_t PotOneTaskHandle;
-uint32_t PotOneTaskBuffer[ 512 ];
+uint32_t PotOneTaskBuffer[ 256 ];
 osStaticThreadDef_t PotOneTaskControlBlock;
 const osThreadAttr_t PotOneTask_attributes = {
   .name = "PotOneTask",
@@ -68,7 +69,7 @@ const osThreadAttr_t PotOneTask_attributes = {
 };
 /* Definitions for PotTwoTask */
 osThreadId_t PotTwoTaskHandle;
-uint32_t PotTwoTaskBuffer[ 512 ];
+uint32_t PotTwoTaskBuffer[ 256 ];
 osStaticThreadDef_t PotTwoTaskControlBlock;
 const osThreadAttr_t PotTwoTask_attributes = {
   .name = "PotTwoTask",
@@ -77,6 +78,34 @@ const osThreadAttr_t PotTwoTask_attributes = {
   .stack_mem = &PotTwoTaskBuffer[0],
   .stack_size = sizeof(PotTwoTaskBuffer),
   .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for PrinterTask */
+osThreadId_t PrinterTaskHandle;
+uint32_t PrinterTaskBuffer[ 256 ];
+osStaticThreadDef_t PrinterTaskControlBlock;
+const osThreadAttr_t PrinterTask_attributes = {
+  .name = "PrinterTask",
+  .cb_mem = &PrinterTaskControlBlock,
+  .cb_size = sizeof(PrinterTaskControlBlock),
+  .stack_mem = &PrinterTaskBuffer[0],
+  .stack_size = sizeof(PrinterTaskBuffer),
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for PotOneMutex */
+osMutexId_t PotOneMutexHandle;
+osStaticMutexDef_t PrinterMutexControlBlock;
+const osMutexAttr_t PotOneMutex_attributes = {
+  .name = "PotOneMutex",
+  .cb_mem = &PrinterMutexControlBlock,
+  .cb_size = sizeof(PrinterMutexControlBlock),
+};
+/* Definitions for PotTwoMutex */
+osMutexId_t PotTwoMutexHandle;
+osStaticMutexDef_t PotTwoMutexControlBlock;
+const osMutexAttr_t PotTwoMutex_attributes = {
+  .name = "PotTwoMutex",
+  .cb_mem = &PotTwoMutexControlBlock,
+  .cb_size = sizeof(PotTwoMutexControlBlock),
 };
 /* USER CODE BEGIN PV */
 
@@ -90,6 +119,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_ADC2_Init(void);
 void StartPotOneTask(void *argument);
 void StartPotTwoTask(void *argument);
+void StartPrinterTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -97,6 +127,14 @@ void StartPotTwoTask(void *argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/*
+ ADCs are ijn interupt mode
+ this function will be called when either of
+ the ADCs are ready
+ */
+
+
 
 /* USER CODE END 0 */
 
@@ -144,6 +182,12 @@ int main(void)
 
   /* Init scheduler */
   osKernelInitialize();
+  /* Create the mutex(es) */
+  /* creation of PotOneMutex */
+  PotOneMutexHandle = osMutexNew(&PotOneMutex_attributes);
+
+  /* creation of PotTwoMutex */
+  PotTwoMutexHandle = osMutexNew(&PotTwoMutex_attributes);
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -167,6 +211,9 @@ int main(void)
 
   /* creation of PotTwoTask */
   PotTwoTaskHandle = osThreadNew(StartPotTwoTask, NULL, &PotTwoTask_attributes);
+
+  /* creation of PrinterTask */
+  PrinterTaskHandle = osThreadNew(StartPrinterTask, NULL, &PrinterTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -438,6 +485,26 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+
+bool pot1Ready=false;
+bool pot2Ready=false;
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
+
+	if (hadc==&hadc1){
+
+
+		pot1Ready=true;
+	}
+	else{
+		pot2Ready=true;
+	};
+
+}
+
+
+
+
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartPotOneTask */
@@ -455,11 +522,20 @@ void StartPotOneTask(void *argument)
 
 
   for(;;)
-  {
-	  readADC(Pot1,&hadc1);
-	  printValues(Pot1,huart2);
-    osDelay(500);
-  }
+	{
+		pot1Ready = false;
+		HAL_ADC_Start_IT(&hadc1);
+
+		osDelay(10);   // enough time for conversion to finish
+
+		if (pot1Ready) {
+			osMutexAcquire(PotOneMutexHandle, osWaitForever);
+			readADC(Pot1, &hadc1);
+			osMutexRelease(PotOneMutexHandle);
+		}
+
+		osDelay(490);
+	}
   /* USER CODE END 5 */
 }
 
@@ -474,13 +550,47 @@ void StartPotTwoTask(void *argument)
 {
   /* USER CODE BEGIN StartPotTwoTask */
   /* Infinite loop */
+	for(;;)
+	{
+		pot2Ready = false;
+		HAL_ADC_Start_IT(&hadc2);
+		osDelay(10);   // enough time for conversion to finish
+		if (pot2Ready) {
+			osMutexAcquire(PotTwoMutexHandle, osWaitForever);
+			readADC(Pot2, &hadc2);
+			osMutexRelease(PotTwoMutexHandle);
+		}
+
+		osDelay(490);
+	}
+  /* USER CODE END StartPotTwoTask */
+}
+
+/* USER CODE BEGIN Header_StartPrinterTask */
+/**
+* @brief Function implementing the PrinterTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartPrinterTask */
+void StartPrinterTask(void *argument)
+{
+  /* USER CODE BEGIN StartPrinterTask */
+  /* Infinite loop */
   for(;;)
   {
-	readADC(Pot2,&hadc2);
-	//printValues(Pot2,huart2);
-    osDelay(500);
+
+	osMutexAcquire(PotOneMutexHandle, osWaitForever);
+	printValues(Pot1,huart2);
+	osMutexRelease(PotOneMutexHandle);
+
+	osMutexAcquire(PotTwoMutexHandle, osWaitForever);
+	printValues(Pot2,huart2);
+	osMutexRelease(PotTwoMutexHandle);
+
+    osDelay(250);
   }
-  /* USER CODE END StartPotTwoTask */
+  /* USER CODE END StartPrinterTask */
 }
 
 /**
