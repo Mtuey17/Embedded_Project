@@ -105,6 +105,18 @@ const osThreadAttr_t ButtonTask_attributes = {
   .stack_size = sizeof(ButtonTaskBuffer),
   .priority = (osPriority_t) osPriorityLow,
 };
+/* Definitions for LEDTask */
+osThreadId_t LEDTaskHandle;
+uint32_t LEDTaskBuffer[ 128 ];
+osStaticThreadDef_t LEDTaskControlBlock;
+const osThreadAttr_t LEDTask_attributes = {
+  .name = "LEDTask",
+  .cb_mem = &LEDTaskControlBlock,
+  .cb_size = sizeof(LEDTaskControlBlock),
+  .stack_mem = &LEDTaskBuffer[0],
+  .stack_size = sizeof(LEDTaskBuffer),
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for PotOneMutex */
 osMutexId_t PotOneMutexHandle;
 osStaticMutexDef_t PrinterMutexControlBlock;
@@ -135,6 +147,7 @@ void StartPotOneTask(void *argument);
 void StartPotTwoTask(void *argument);
 void StartPrinterTask(void *argument);
 void StartButtonTask(void *argument);
+void StartLEDTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -232,6 +245,9 @@ int main(void)
 
   /* creation of ButtonTask */
   ButtonTaskHandle = osThreadNew(StartButtonTask, NULL, &ButtonTask_attributes);
+
+  /* creation of LEDTask */
+  LEDTaskHandle = osThreadNew(StartLEDTask, NULL, &LEDTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -483,17 +499,20 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : MORSE_CODE_BUTTON_Pin */
-  GPIO_InitStruct.Pin = MORSE_CODE_BUTTON_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  /*Configure GPIO pins : MORSE_CODE_BUTTON_Pin START_COMMAND_BUTTON_Pin */
+  GPIO_InitStruct.Pin = MORSE_CODE_BUTTON_Pin|START_COMMAND_BUTTON_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(MORSE_CODE_BUTTON_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
@@ -502,9 +521,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : STATUS_LED_Pin */
+  GPIO_InitStruct.Pin = STATUS_LED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(STATUS_LED_GPIO_Port, &GPIO_InitStruct);
+
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI0_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI1_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -629,18 +658,16 @@ void StartPrinterTask(void *argument)
 * @retval None
 */
 
-
-volatile uint32_t lastEdgeTime = 0;
-volatile uint32_t lastSymbolTime = 0;
-volatile uint32_t pressTime = 0;
-volatile uint32_t releaseTime = 0;
-volatile bool buttonReleasedEvent = false;
-volatile bool buttonIsDown = false;
-
-
+bool startButtonTask=false;
+void commandStartButton(){
+	startButtonTask=true;
+}
 bool instructionStarted=false;
-char currentWord[10]="";
+char currentWord[5]="";
 uint8_t currentIndex=0;
+bool getMainCommand=true;
+char mainCommand;
+char subCommand;
 
 char checkLetter(char  currentSequence[]){
 
@@ -668,88 +695,143 @@ char checkLetter(char  currentSequence[]){
 	if (strcmp(currentSequence, "-----") == 0) return '0';
 	return 'z';
 }
-void morseCodePress(void)
-{
-    uint32_t now = HAL_GetTick();
 
-    if ((now - lastEdgeTime) < 50) {
-        return;
-    }
-    lastEdgeTime  = now;
-
-    GPIO_PinState state = HAL_GPIO_ReadPin(MORSE_CODE_BUTTON_GPIO_Port,
-                                           MORSE_CODE_BUTTON_Pin);
-
-    // active low button
-    if (state == GPIO_PIN_RESET) {
-            if (buttonIsDown == false) {
-                buttonIsDown = true;
-                pressTime = now;
-            }
-        } else {
-            if (buttonIsDown == true) {
-                buttonIsDown = false;
-                releaseTime = now;
-                lastSymbolTime = now;
-                buttonReleasedEvent = true;
-            }
-        }
-}
+bool commandSet=false;
 
 /* USER CODE END Header_StartButtonTask */
 void StartButtonTask(void *argument)
 {
   /* USER CODE BEGIN StartButtonTask */
+	  /* Infinite loop */
+    uint32_t pressTime = 0;//lst time button was pressed
+    uint32_t holdTime = 0;//how long button was held
+    uint32_t lastSymbolTime = 0;//time of most recent dot/dash
+
+
+    //storing previous button state
+    GPIO_PinState lastState = 1;
+
+    const uint32_t dashThreshold = 250;
+    const uint32_t debounceDelay = 20;
+    for (;;)
+    {
+
+    	if (startButtonTask){
+    	//reading button
+        GPIO_PinState currentState = HAL_GPIO_ReadPin(MORSE_CODE_BUTTON_GPIO_Port,MORSE_CODE_BUTTON_Pin);
+
+
+        //if state has changed since last read
+        if (currentState != lastState)
+        {
+        	//delaying for debounce
+            osDelay(debounceDelay);
+
+            //reading state again
+            currentState = HAL_GPIO_ReadPin(MORSE_CODE_BUTTON_GPIO_Port,MORSE_CODE_BUTTON_Pin);
+
+
+            //checking if state has changed
+            if (currentState != lastState)
+            {
+            	//updating state
+                lastState = currentState;
+
+                //if button is pressed getting time
+                if (currentState == 0){ pressTime = HAL_GetTick();}
+                else//if button is released
+                {
+                	//seeing how long the button was held for
+                    holdTime = HAL_GetTick() - pressTime;
+
+                        //if hold time is below threshold, dot
+                        if (holdTime < dashThreshold){currentWord[currentIndex] = '.';}
+                        else{currentWord[currentIndex] = '-';}
+                        currentIndex++;
+                        currentWord[currentIndex] = '\0';//adding null terminator to next spot
+
+
+                    //showing that user has started to input data
+                    instructionStarted = true;
+                    lastSymbolTime = HAL_GetTick();//updating tiestamp
+
+                    //printing morse code combo every button press
+                    HAL_UART_Transmit(&huart2, (uint8_t*)currentWord, strlen(currentWord), HAL_MAX_DELAY);
+                    HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+                }
+            }
+        }
+
+        //if there is a significant wait between button presses and
+        //the user has started to give instructions, assume user is done
+        //and find corresponding char
+        uint8_t wordSize= sizeof(currentWord)/sizeof(char);
+        if ( ((HAL_GetTick() - lastSymbolTime > 2000) && instructionStarted))
+        {
+        	//chcking for a matching char
+
+        	if (getMainCommand){
+        		mainCommand = checkLetter(currentWord);
+        		if (mainCommand!='z'){getMainCommand=false;}
+
+        		HAL_UART_Transmit(&huart2, (uint8_t*)"Main Command: ", 14, HAL_MAX_DELAY);
+        		HAL_UART_Transmit(&huart2, (uint8_t*)&mainCommand, 1, HAL_MAX_DELAY);
+        		HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+
+        	}
+        	else{
+        		subCommand = checkLetter(currentWord);
+        		if (subCommand!='z'){
+        			getMainCommand=true;
+        		 HAL_UART_Transmit(&huart2, (uint8_t*)"Sub Command: ", 13, HAL_MAX_DELAY);
+        		            HAL_UART_Transmit(&huart2, (uint8_t*)&subCommand, 1, HAL_MAX_DELAY);
+        		            HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+        		            startButtonTask=false;
+        		            commandSet=true;
+        		}
+
+        	}
+
+
+
+            instructionStarted = false;
+            currentIndex = 0;
+            currentWord[0] = '\0';
+        }
+    	}
+        osDelay(5);
+    }
+  /* USER CODE END StartButtonTask */
+}
+
+/* USER CODE BEGIN Header_StartLEDTask */
+/**
+* @brief Function implementing the LEDTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartLEDTask */
+void StartLEDTask(void *argument)
+{
+  /* USER CODE BEGIN StartLEDTask */
   /* Infinite loop */
-
-   uint32_t holdTime;
-   const uint32_t dashThreshold = 500;
-
+	uint16_t delayTime=0;
   for(;;)
   {
-	  if (buttonReleasedEvent)
-	          {
 
-	              buttonReleasedEvent = false;
-	              instructionStarted = true;
-	              if (releaseTime >= pressTime) {
-	                      holdTime = releaseTime - pressTime;
-
-
-	              if (currentIndex < sizeof(currentWord) - 1) {
-	              if (holdTime < dashThreshold) {currentWord[currentIndex] = '.';}//dot
-	              else {currentWord[currentIndex] = '-';}//long press, dash
-	              currentIndex++;
-	              currentWord[currentIndex] = '\0';
-	              }
-
-
-	              HAL_UART_Transmit(&huart2, (uint8_t*)currentWord, strlen(currentWord), HAL_MAX_DELAY);
-	              HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
-	          }
-	      }
-
-	  if ( HAL_GetTick()-lastSymbolTime >2000&&instructionStarted){
-	 	  	  	  char instruction=checkLetter(currentWord);
-
-	 	  	  	HAL_UART_Transmit(&huart2, (uint8_t*)&instruction, 1, HAL_MAX_DELAY);
-	 	  	  	HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
-	 	  	    HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
-	 	  	     instructionStarted=false;
-	 	  	    currentIndex = 0;
-	 	  	    currentWord[0] = '\0';
-	 	  	     buttonReleasedEvent = false;
-	 	  	     buttonIsDown = false;
-	 	  	     pressTime = 0;
-	 	  	     releaseTime = 0;
-	 	  	  lastEdgeTime = 0;
-	 	  	     lastSymbolTime = 0;
-	 	}
-
-	 	          osDelay(10);
+    if (!startButtonTask&&!commandSet){HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, 0); delayTime=1;}
+    else{
+    	if (commandSet&&!startButtonTask){HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, 1); delayTime=1;}
+    	else{
+    	HAL_GPIO_TogglePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin);
+    	if (getMainCommand){delayTime=500;}
+    	else{delayTime=250;}
+    	}
+    }
+    osDelay(delayTime);
   }
+  /* USER CODE END StartLEDTask */
 }
-  /* USER CODE END StartButtonTask */
 
 /**
   * @brief  Period elapsed callback in non blocking mode

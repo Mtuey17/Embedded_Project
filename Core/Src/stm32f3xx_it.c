@@ -24,11 +24,9 @@
 /* USER CODE BEGIN Includes */
 /* USER CODE END Includes */
 
-
-void morseCodePress();
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN TD */
-
+void commandStartButton();
 /* USER CODE END TD */
 
 /* Private define ------------------------------------------------------------*/
@@ -171,11 +169,25 @@ void EXTI0_IRQHandler(void)
   /* USER CODE BEGIN EXTI0_IRQn 0 */
 
   /* USER CODE END EXTI0_IRQn 0 */
-  morseCodePress();
   HAL_GPIO_EXTI_IRQHandler(MORSE_CODE_BUTTON_Pin);
   /* USER CODE BEGIN EXTI0_IRQn 1 */
 
   /* USER CODE END EXTI0_IRQn 1 */
+}
+
+/**
+  * @brief This function handles EXTI line1 interrupt.
+  */
+void EXTI1_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI1_IRQn 0 */
+
+  commandStartButton();
+  /* USER CODE END EXTI1_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(START_COMMAND_BUTTON_Pin);
+  /* USER CODE BEGIN EXTI1_IRQn 1 */
+
+  /* USER CODE END EXTI1_IRQn 1 */
 }
 
 /**
