@@ -23,7 +23,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "trimpot.h"
-#include <stdio.h>
+
+#include <string.h>
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -81,7 +83,7 @@ const osThreadAttr_t PotTwoTask_attributes = {
 };
 /* Definitions for PrinterTask */
 osThreadId_t PrinterTaskHandle;
-uint32_t PrinterTaskBuffer[ 256 ];
+uint32_t PrinterTaskBuffer[ 128 ];
 osStaticThreadDef_t PrinterTaskControlBlock;
 const osThreadAttr_t PrinterTask_attributes = {
   .name = "PrinterTask",
@@ -90,6 +92,18 @@ const osThreadAttr_t PrinterTask_attributes = {
   .stack_mem = &PrinterTaskBuffer[0],
   .stack_size = sizeof(PrinterTaskBuffer),
   .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for ButtonTask */
+osThreadId_t ButtonTaskHandle;
+uint32_t ButtonTaskBuffer[ 128 ];
+osStaticThreadDef_t ButtonTaskControlBlock;
+const osThreadAttr_t ButtonTask_attributes = {
+  .name = "ButtonTask",
+  .cb_mem = &ButtonTaskControlBlock,
+  .cb_size = sizeof(ButtonTaskControlBlock),
+  .stack_mem = &ButtonTaskBuffer[0],
+  .stack_size = sizeof(ButtonTaskBuffer),
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for PotOneMutex */
 osMutexId_t PotOneMutexHandle;
@@ -120,6 +134,7 @@ static void MX_ADC2_Init(void);
 void StartPotOneTask(void *argument);
 void StartPotTwoTask(void *argument);
 void StartPrinterTask(void *argument);
+void StartButtonTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -214,6 +229,9 @@ int main(void)
 
   /* creation of PrinterTask */
   PrinterTaskHandle = osThreadNew(StartPrinterTask, NULL, &PrinterTask_attributes);
+
+  /* creation of ButtonTask */
+  ButtonTaskHandle = osThreadNew(StartButtonTask, NULL, &ButtonTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -471,12 +489,22 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : MORSE_CODE_BUTTON_Pin */
+  GPIO_InitStruct.Pin = MORSE_CODE_BUTTON_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(MORSE_CODE_BUTTON_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -554,7 +582,7 @@ void StartPotTwoTask(void *argument)
 	{
 		pot2Ready = false;
 		HAL_ADC_Start_IT(&hadc2);
-		osDelay(10);   // enough time for conversion to finish
+		osDelay(10);
 		if (pot2Ready) {
 			osMutexAcquire(PotTwoMutexHandle, osWaitForever);
 			readADC(Pot2, &hadc2);
@@ -577,21 +605,151 @@ void StartPrinterTask(void *argument)
 {
   /* USER CODE BEGIN StartPrinterTask */
   /* Infinite loop */
+  osThreadSuspend(PrinterTaskHandle);
   for(;;)
   {
 
 	osMutexAcquire(PotOneMutexHandle, osWaitForever);
-	printValues(Pot1,huart2);
+	printValues(Pot1,&huart2);
 	osMutexRelease(PotOneMutexHandle);
 
 	osMutexAcquire(PotTwoMutexHandle, osWaitForever);
-	printValues(Pot2,huart2);
+	printValues(Pot2,&huart2);
 	osMutexRelease(PotTwoMutexHandle);
 
-    osDelay(250);
+    osDelay(500);
   }
   /* USER CODE END StartPrinterTask */
 }
+
+/* USER CODE BEGIN Header_StartButtonTask */
+/**
+* @brief Function implementing the ButtonTask thread.
+* @param argument: Not used
+* @retval None
+*/
+
+
+volatile uint32_t lastEdgeTime = 0;
+volatile uint32_t lastSymbolTime = 0;
+volatile uint32_t pressTime = 0;
+volatile uint32_t releaseTime = 0;
+volatile bool buttonReleasedEvent = false;
+volatile bool buttonIsDown = false;
+
+
+bool instructionStarted=false;
+char currentWord[10]="";
+uint8_t currentIndex=0;
+
+char checkLetter(char  currentSequence[]){
+
+
+
+	if (strcmp(currentSequence, ".-") == 0) return 'A';
+	if (strcmp(currentSequence, "-...") == 0) return 'B';
+	if (strcmp(currentSequence, "-.-.") == 0) return 'C';
+	if (strcmp(currentSequence, "-..") == 0) return 'D';
+	if (strcmp(currentSequence, ".") == 0) return 'E';
+	if (strcmp(currentSequence, "..-.") == 0) return 'F';
+	if (strcmp(currentSequence, "--.") == 0) return 'G';
+	if (strcmp(currentSequence, "....") == 0) return 'H';
+
+
+	if (strcmp(currentSequence, ".----") == 0) return '1';
+	if (strcmp(currentSequence, "..---") == 0) return '2';
+	if (strcmp(currentSequence, "...--") == 0) return '3';
+	if (strcmp(currentSequence, "....-") == 0) return '4';
+	if (strcmp(currentSequence, ".....") == 0) return '5';
+	if (strcmp(currentSequence, "-....") == 0) return '6';
+	if (strcmp(currentSequence, "--...") == 0) return '7';
+	if (strcmp(currentSequence, "---..") == 0) return '8';
+	if (strcmp(currentSequence, "----.") == 0) return '9';
+	if (strcmp(currentSequence, "-----") == 0) return '0';
+	return 'z';
+}
+void morseCodePress(void)
+{
+    uint32_t now = HAL_GetTick();
+
+    if ((now - lastEdgeTime) < 50) {
+        return;
+    }
+    lastEdgeTime  = now;
+
+    GPIO_PinState state = HAL_GPIO_ReadPin(MORSE_CODE_BUTTON_GPIO_Port,
+                                           MORSE_CODE_BUTTON_Pin);
+
+    // active low button
+    if (state == GPIO_PIN_RESET) {
+            if (buttonIsDown == false) {
+                buttonIsDown = true;
+                pressTime = now;
+            }
+        } else {
+            if (buttonIsDown == true) {
+                buttonIsDown = false;
+                releaseTime = now;
+                lastSymbolTime = now;
+                buttonReleasedEvent = true;
+            }
+        }
+}
+
+/* USER CODE END Header_StartButtonTask */
+void StartButtonTask(void *argument)
+{
+  /* USER CODE BEGIN StartButtonTask */
+  /* Infinite loop */
+
+   uint32_t holdTime;
+   const uint32_t dashThreshold = 500;
+
+  for(;;)
+  {
+	  if (buttonReleasedEvent)
+	          {
+
+	              buttonReleasedEvent = false;
+	              instructionStarted = true;
+	              if (releaseTime >= pressTime) {
+	                      holdTime = releaseTime - pressTime;
+
+
+	              if (currentIndex < sizeof(currentWord) - 1) {
+	              if (holdTime < dashThreshold) {currentWord[currentIndex] = '.';}//dot
+	              else {currentWord[currentIndex] = '-';}//long press, dash
+	              currentIndex++;
+	              currentWord[currentIndex] = '\0';
+	              }
+
+
+	              HAL_UART_Transmit(&huart2, (uint8_t*)currentWord, strlen(currentWord), HAL_MAX_DELAY);
+	              HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+	          }
+	      }
+
+	  if ( HAL_GetTick()-lastSymbolTime >2000&&instructionStarted){
+	 	  	  	  char instruction=checkLetter(currentWord);
+
+	 	  	  	HAL_UART_Transmit(&huart2, (uint8_t*)&instruction, 1, HAL_MAX_DELAY);
+	 	  	  	HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+	 	  	    HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+	 	  	     instructionStarted=false;
+	 	  	    currentIndex = 0;
+	 	  	    currentWord[0] = '\0';
+	 	  	     buttonReleasedEvent = false;
+	 	  	     buttonIsDown = false;
+	 	  	     pressTime = 0;
+	 	  	     releaseTime = 0;
+	 	  	  lastEdgeTime = 0;
+	 	  	     lastSymbolTime = 0;
+	 	}
+
+	 	          osDelay(10);
+  }
+}
+  /* USER CODE END StartButtonTask */
 
 /**
   * @brief  Period elapsed callback in non blocking mode

@@ -60,31 +60,31 @@ float readADC(trimpotSensor *trimpot ,ADC_HandleTypeDef *PORT){
 return trimpot->Readings[0];
 }
 
-bool printValues(trimpotSensor *trimpot,UART_HandleTypeDef UART){
+bool printValues(trimpotSensor *trimpot,UART_HandleTypeDef *UART){
 
 	char buf[64];
 	int len = sprintf(buf, "-------- POT %d --------\r\n", trimpot->potNumber);
-	HAL_UART_Transmit(&UART, (uint8_t*)buf, len,100);
+	HAL_UART_Transmit(UART, (uint8_t*)buf, len,100);
 	len = sprintf(buf, "High Readings: %d last @ %0.3fs \r\n", trimpot->highCount,trimpot->lastHighTime/1000.0f);
-	HAL_UART_Transmit(&UART, (uint8_t*)buf, len,100);
+	HAL_UART_Transmit(UART, (uint8_t*)buf, len,100);
 	len = sprintf(buf, "Low Readings: %d last @ %0.3fs \r\n", trimpot->lowCount,trimpot->lastLowTime/1000.0f);
-	HAL_UART_Transmit(&UART, (uint8_t*)buf, len,100);
+	HAL_UART_Transmit(UART, (uint8_t*)buf, len,100);
 
 
 	len = sprintf(buf, "Highest Reading: %0.3f @ %0.3fs \r\n", trimpot->highestReading,trimpot->highestTime/1000.0f);
-	HAL_UART_Transmit(&UART, (uint8_t*)buf, len,100);
+	HAL_UART_Transmit(UART, (uint8_t*)buf, len,100);
 	len = sprintf(buf, "Lowest Reading: %0.3f @ %0.3fs \r\n", trimpot->lowestReading,trimpot->lowestTime/1000.0f);
-	HAL_UART_Transmit(&UART, (uint8_t*)buf, len,100);
+	HAL_UART_Transmit(UART, (uint8_t*)buf, len,100);
 
 
 	len = sprintf(buf, "Last 10 Readings: ");
-		HAL_UART_Transmit(&UART, (uint8_t*)buf, len,100);
+		HAL_UART_Transmit(UART, (uint8_t*)buf, len,100);
 	for (int i=0;i<10;i++){
 		len = sprintf(buf, "%0.2f,", trimpot->Readings[i]);
-		HAL_UART_Transmit(&UART, (uint8_t*)buf, len,100);
+		HAL_UART_Transmit(UART, (uint8_t*)buf, len,100);
 	}
 	len = sprintf(buf, "\r\n------------------------\r\n\n");
-	HAL_UART_Transmit(&UART, (uint8_t*)buf, len,100);
+	HAL_UART_Transmit(UART, (uint8_t*)buf, len,100);
 
 
 
