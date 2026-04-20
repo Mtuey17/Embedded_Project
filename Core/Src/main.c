@@ -765,8 +765,8 @@ void StartButtonTask(void *argument)
         //if there is a significant wait between button presses and
         //the user has started to give instructions, assume user is done
         //and find corresponding char
-        uint8_t wordSize= sizeof(currentWord)/sizeof(char);
-        if ( ((HAL_GetTick() - lastSymbolTime > 2000) && instructionStarted))
+
+        if ( ((HAL_GetTick() - lastSymbolTime > 2000) && instructionStarted)||currentIndex>=4)
         {
         	//chcking for a matching char
 
