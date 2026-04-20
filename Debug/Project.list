@@ -2429,7 +2429,7 @@ void StartButtonTask(void *argument)
         //the user has started to give instructions, assume user is done
         //and find corresponding char
 
-        if ( ((HAL_GetTick() - lastSymbolTime > 2000) && instructionStarted)||currentIndex>=5)
+        if ( ((HAL_GetTick() - lastSymbolTime > 2000) && instructionStarted)||currentIndex>=4)
  80014d4:	f000 fdb8 	bl	8002048 <HAL_GetTick>
  80014d8:	4602      	mov	r2, r0
  80014da:	6a3b      	ldr	r3, [r7, #32]
@@ -2442,7 +2442,7 @@ void StartButtonTask(void *argument)
  80014ea:	d103      	bne.n	80014f4 <StartButtonTask+0x100>
  80014ec:	4b32      	ldr	r3, [pc, #200]	@ (80015b8 <StartButtonTask+0x1c4>)
  80014ee:	781b      	ldrb	r3, [r3, #0]
- 80014f0:	2b04      	cmp	r3, #4
+ 80014f0:	2b03      	cmp	r3, #3
  80014f2:	d959      	bls.n	80015a8 <StartButtonTask+0x1b4>
         {
         	//chcking for a matching char

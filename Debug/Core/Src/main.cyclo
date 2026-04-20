@@ -8,9 +8,9 @@
 ../Core/Src/main.c:574:6:StartPotOneTask	2
 ../Core/Src/main.c:606:6:StartPotTwoTask	2
 ../Core/Src/main.c:633:6:StartPrinterTask	1
-../Core/Src/main.c:662:6:commandStartButton	1
-../Core/Src/main.c:672:6:checkLetter	19
-../Core/Src/main.c:702:6:StartButtonTask	12
-../Core/Src/main.c:814:6:StartLEDTask	6
-../Core/Src/main.c:844:6:HAL_TIM_PeriodElapsedCallback	2
-../Core/Src/main.c:862:6:Error_Handler	1
+../Core/Src/main.c:663:6:commandStartButton	1
+../Core/Src/main.c:673:6:checkLetter	19
+../Core/Src/main.c:703:6:StartButtonTask	12
+../Core/Src/main.c:815:6:StartLEDTask	6
+../Core/Src/main.c:845:6:HAL_TIM_PeriodElapsedCallback	2
+../Core/Src/main.c:863:6:Error_Handler	1
