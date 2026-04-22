@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include "cmsis_os.h"
 #include <stdbool.h>
-#include "main.h"
+
 #include <stdio.h>
 trimpotSensor *initTrimpot(uint8_t num){
 
@@ -30,7 +30,7 @@ trimpotSensor *initTrimpot(uint8_t num){
 
 
 
-float readADC(trimpotSensor *trimpot ,ADC_HandleTypeDef *PORT){
+float readADC(trimpotSensor *trimpot ,ADC_HandleTypeDef *PORT,TIM_HandleTypeDef *htim){
 
 
 	uint16_t currentReading = HAL_ADC_GetValue(PORT);
@@ -43,9 +43,12 @@ float readADC(trimpotSensor *trimpot ,ADC_HandleTypeDef *PORT){
 	//applying low pass filter
 	float smoothingFactor=0.9;
 	trimpot->Readings[0] =smoothingFactor * rawValue + (1 - smoothingFactor) * trimpot->Readings[1];
+	uint8_t dutyCycle=0;
+	if (trimpot->Readings[0]>(3.32f*.9f)){trimpot->highCount++;dutyCycle=255; trimpot->lastHighTime=HAL_GetTick();}
+	if (trimpot->Readings[0]<(3.32f*.1f)){trimpot->lowCount++;dutyCycle=255; trimpot->lastLowTime=HAL_GetTick();}
 
-	if (trimpot->Readings[0]>(3.32f*.9f)){trimpot->highCount++; trimpot->lastHighTime=HAL_GetTick();}
-	if (trimpot->Readings[0]<(3.32f*.1f)){trimpot->lowCount++; trimpot->lastLowTime=HAL_GetTick();}
+
+	__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, dutyCycle);
 	if (trimpot->Readings[0]>trimpot->highestReading){
 		trimpot->highestReading=trimpot->Readings[0];
 		trimpot->highestTime=HAL_GetTick();
@@ -62,7 +65,7 @@ return trimpot->Readings[0];
 
 bool printValues(trimpotSensor *trimpot,UART_HandleTypeDef *UART){
 
-	char buf[64];
+	char buf[128];
 	int len = sprintf(buf, "-------- POT %d --------\r\n", trimpot->potNumber);
 	HAL_UART_Transmit(UART, (uint8_t*)buf, len,100);
 	len = sprintf(buf, "High Readings: %d last @ %0.3fs \r\n", trimpot->highCount,trimpot->lastHighTime/1000.0f);

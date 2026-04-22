@@ -55,6 +55,8 @@ trimpotSensor *Pot2;
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 
+TIM_HandleTypeDef htim3;
+
 UART_HandleTypeDef huart2;
 
 /* Definitions for PotOneTask */
@@ -83,7 +85,7 @@ const osThreadAttr_t PotTwoTask_attributes = {
 };
 /* Definitions for PrinterTask */
 osThreadId_t PrinterTaskHandle;
-uint32_t PrinterTaskBuffer[ 128 ];
+uint32_t PrinterTaskBuffer[ 512];
 osStaticThreadDef_t PrinterTaskControlBlock;
 const osThreadAttr_t PrinterTask_attributes = {
   .name = "PrinterTask",
@@ -143,6 +145,7 @@ static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC2_Init(void);
+static void MX_TIM3_Init(void);
 void StartPotOneTask(void *argument);
 void StartPotTwoTask(void *argument);
 void StartPrinterTask(void *argument);
@@ -198,6 +201,7 @@ int main(void)
   MX_ADC1_Init();
   MX_USART2_UART_Init();
   MX_ADC2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
   Pot1=initTrimpot(1);
@@ -311,9 +315,11 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_ADC12;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_ADC12
+                              |RCC_PERIPHCLK_TIM34;
   PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
   PeriphClkInit.Adc12ClockSelection = RCC_ADC12PLLCLK_DIV1;
+  PeriphClkInit.Tim34ClockSelection = RCC_TIM34CLK_HCLK;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -440,6 +446,55 @@ static void MX_ADC2_Init(void)
   /* USER CODE BEGIN ADC2_Init 2 */
 
   /* USER CODE END ADC2_Init 2 */
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 71;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 499;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 250;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
 
 }
 
@@ -587,7 +642,7 @@ void StartPotOneTask(void *argument)
 
 		if (pot1Ready) {
 			osMutexAcquire(PotOneMutexHandle, osWaitForever);
-			readADC(Pot1, &hadc1);
+			readADC(Pot1, &hadc1,&htim3);
 			osMutexRelease(PotOneMutexHandle);
 		}
 
@@ -614,7 +669,7 @@ void StartPotTwoTask(void *argument)
 		osDelay(10);
 		if (pot2Ready) {
 			osMutexAcquire(PotTwoMutexHandle, osWaitForever);
-			readADC(Pot2, &hadc2);
+			readADC(Pot2, &hadc2,&htim3);
 			osMutexRelease(PotTwoMutexHandle);
 		}
 
@@ -634,7 +689,7 @@ void StartPrinterTask(void *argument)
 {
   /* USER CODE BEGIN StartPrinterTask */
   /* Infinite loop */
-  osThreadSuspend(PrinterTaskHandle);
+  //osThreadSuspend(PrinterTaskHandle);
   for(;;)
   {
 
@@ -711,7 +766,7 @@ void StartButtonTask(void *argument)
 
     //storing previous button state
     GPIO_PinState lastState = 1;
-
+    //osThreadSuspend(ButtonTaskHandle);
     const uint32_t dashThreshold = 250;
     const uint32_t debounceDelay = 20;
     for (;;)
@@ -767,7 +822,7 @@ void StartButtonTask(void *argument)
         //the user has started to give instructions, assume user is done
         //and find corresponding char
 
-        if ( ((HAL_GetTick() - lastSymbolTime > 2000) && instructionStarted)||currentIndex>=4)
+        if ( ((HAL_GetTick() - lastSymbolTime > 2000) && instructionStarted)||currentIndex>=5)
         {
         	//chcking for a matching char
 
@@ -817,8 +872,13 @@ void StartLEDTask(void *argument)
   /* USER CODE BEGIN StartLEDTask */
   /* Infinite loop */
 	uint16_t delayTime=0;
+	//osThreadSuspend(LEDTaskHandle);
+	HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+
   for(;;)
   {
+
+
 
     if (!startButtonTask&&!commandSet){HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, 0); delayTime=1;}
     else{

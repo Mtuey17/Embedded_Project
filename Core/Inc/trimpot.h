@@ -31,7 +31,7 @@ trimpotSensor *initTrimpot(uint8_t);
 
 
 
-float readADC(trimpotSensor*,ADC_HandleTypeDef*);
+float readADC(trimpotSensor*,ADC_HandleTypeDef*,TIM_HandleTypeDef*);
 
 bool printValues(trimpotSensor*,UART_HandleTypeDef*);
 
